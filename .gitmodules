@@ -1,0 +1,3 @@
+[submodule "webdemo"]
+	path = webdemo
+	url = https://github.com/vigarov/CPEN442termproject-webdemo
