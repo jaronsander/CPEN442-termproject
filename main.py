@@ -1,68 +1,52 @@
-import twilio_api
-from flask import Flask, request
+from passgate import PassgateAPI
+from flask import Flask, request, abort
 import os
 from twilio.rest import Client
 from dotenv import load_dotenv
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
-load_dotenv()
-account_sid = os.environ['TWILIO_ACCOUNT_SID']
-auth_token = os.environ['TWILIO_AUTH_TOKEN']
 
-client = Client(account_sid, auth_token)
+ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
+pAPI = PassgateAPI()
 
-@app.route("/")
-def hello():
-    return "Hello World!"
+def authorize():
+    auth = request.headers['Authorization']
+    if auth is None:
+        return False
+    else:
+        title,token = auth.split(" ")
+        if title is None or title != "Bearer" or token is None:
+            return False
+        return pAPI.authorizeClient(token), token
 
-@app.route("/call", methods=['GET', 'POST'])
-def call():
-    resp = VoiceResponse()
-    # Start our <Gather> verb
-    gather = Gather(num_digits=1, action='/gather')
-    gather.say('For sales, press 1. For support, press 2.')
-    resp.append(gather)
-    call = client.calls.create(
-        twiml=resp,
-        to='+15875906624',
-        from_='+16042452494'
-    )
+@app.route("/requestcode", methods=['GET'])
+def getcode():
+    auth,client_api_token = authorize()
+    if not auth:
+        abort(403)
+    uname = request.args['username']
+    phone = request.args['phone']
+    timeout = request.args['timeout']
+    if uname is None or phone is None or timeout is None:
+        abort(400)
+    code = pAPI.setCode(client_api_token,uname,phone,timeout)
+    if code is None:
+        abort(400)
+    return code
 
-    return str(call)
+@app.route("/auth/<user_token>",methods=['GET'])
+def authenticate(user_token):
+    auth, client_api_token = authorize()
+    if not auth:
+        abort(403)
+    ret = pAPI.makeCall(user_token)
+    return {"authorized":ret}
 
+@app.route("/twilio_answer/<twiliotoken>", methods=['POST'])
+def twilio_answer(twiliotoken):
+    pAPI.registerTwilioAnswer(twiliotoken,request.values['Digits'])
 
-@app.route('/gather', methods=['GET', 'POST'])
-def gather():
-    """Processes results from the <Gather> prompt in /call"""
-    # Start our TwiML response
-    resp = VoiceResponse()
-
-    # If Twilio's request to our app included already gathered digits,
-    # process them
-    if 'Digits' in request.values:
-        # Get which digit the caller chose
-        choice = request.values['Digits']
-
-        # <Say> a different message depending on the caller's choice
-        if choice == '1':
-            resp.say('You selected sales. Good for you!')
-            return str(resp)
-        elif choice == '2':
-            resp.say('You need support. We will help!')
-            return str(resp)
-        else:
-            # If the caller didn't choose 1 or 2, apologize and ask them again
-            resp.say("Sorry, I don't understand that choice.")
-
-    # If the user didn't choose 1 or 2 (or anything), send them back to /voice
-    resp.redirect('/call')
-
-    return str(resp)
-
-
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    app.run()
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    context = ('ssl_certs/local_api_cert.crt', 'ssl_certs/local_api_key.key')
+    app.run(ssl_context=context,threaded=True, port=5000)
