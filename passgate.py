@@ -42,6 +42,7 @@ class PassgateAPI:
         self.clientsUserMap = {}
         self.userTokensMap = {}
         self.MIN_TIMEOUT = 40
+        self.MAX_TIMEOUT = 60
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
         self.twilioTokensMap = {}
@@ -67,7 +68,7 @@ class PassgateAPI:
     def setCode(self,clientToken,u,p,t):
         if u is None or p is None or t is None:
             return None
-        actualTimeout = min(t,self.MIN_TIMEOUT)
+        actualTimeout = min(max(t,self.MIN_TIMEOUT),self.MAX_TIMEOUT)
         userResponseToken = secrets.token_urlsafe(32)
         generatedCode = secrets.randbelow(100)
         clientMap = self.clientsUserMap[clientToken]
