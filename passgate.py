@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
+ngrok_address = "https://fea5-128-189-150-96.ngrok.io/"
 
 class TwilioWrapper:
     def __init__(self):
@@ -25,11 +26,11 @@ class TwilioWrapper:
         )
         return call
 
-    def generateTwiml(self,ngrokPrefix, twilioToken, requestTimeout):
+    def generateTwiml(self,ngrokPrefix, twilioToken, requestTimeout,clientName):
         resulting_to = requestTimeout-20
         twiml = "<Response>" \
-                    "<Gather action=\""+ngrokPrefix + twilioToken+"\" method=\"POST\" input=\"dtmf\" timeout=\""+str(resulting_to)+"\">" \
-                        "<Say>Please input the 2 digits that have appeared on your screen in the following "+ str(resulting_to-2) +"</Say>"\
+                    "<Gather action=\""+ngrokPrefix + "twilio_answer/" +twilioToken+"\" method=\"POST\" input=\"dtmf\" numDigits=\"2\" timeout=\""+str(resulting_to)+"\">" \
+                        "<Say>Login request for "+clientName+"'s services.\nPlease input the 2 digits that have appeared on your screen in the following "+ str(resulting_to-2) +" seconds. </Say>"\
                     "</Gather>" \
                 "</Response>"
         return twiml
@@ -38,103 +39,89 @@ class TwilioWrapper:
 class PassgateAPI:
     def __init__(self):
         self.twilio = TwilioWrapper()
-        self.clientsList = self.loadClientsFromDB()
-        self.clientsUserMap = {}
-        self.userTokensMap = {}
+        self.clientsMap = self.loadClientsFromDB()
+        self.userTokensMap = {}   # userResponseToken -> (generatedCode,phone#,timeout,clientName)
+        self.twilioTokensMap = {} # twilioTokem -> (generatedCode,authFlag,threading.Event)
         self.MIN_TIMEOUT = 40
         self.MAX_TIMEOUT = 60
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
-        self.twilioTokensMap = {}
 
     # Returns a map of the form {<client_auth_token> : ClientName }
     def loadClientsFromDB(self):
         # Note: in real application, we'd get that from a DB
-        return ["5iv3TYphzQu-ZEoWgpMaGp7RRHXeEWsQzc7A9h2RKL4"]
+        return {"5iv3TYphzQu-ZEoWgpMaGp7RRHXeEWsQzc7A9h2RKL4":"CashBank"}
 
     def authorizeClient(self, token):
-        if token in self.clientsList:
-            # Can authorize sucessfully!
-            # First, generate an entry for the client in the clients UserMap if it doesn't have one yet
-            if token not in self.clientsUserMap.keys():
-                self.clientsUserMap.update({token: {}})
-            return True
-        return False
+        return token in self.clientsMap.keys()
 
     # Assuming Client has already been authenticated using `clientToken`
     # Generates code for this Client's user `u`
     # `p` is the Client's user phone number
     # `t` is the Client's requested timeout
     def setCode(self,clientToken,u,p,t):
-        if u is None or p is None or t is None:
-            return None
+        assert clientToken is not None and u is not None and p is not None and t is not None
         actualTimeout = min(max(t,self.MIN_TIMEOUT),self.MAX_TIMEOUT)
         userResponseToken = secrets.token_urlsafe(32)
+        while userResponseToken in self.userTokensMap.keys():
+            userResponseToken = secrets.token_urlsafe(32)
         generatedCode = secrets.randbelow(100)
-        clientMap = self.clientsUserMap[clientToken]
-        # Note, if assertion fails, somehow one has managed to call method before authorization --> kill backend, there's a fail in our logic
-        assert clientMap is not None
-        if u in clientMap.keys():
-            # Auth request already in place, either wait for timeout, or remove it
-            # TODO: Maybe change this depending on what we decide it to do
-            return None
-        clientMap[u] = (generatedCode, p,actualTimeout)
-        # Update Maps
-        self.clientsUserMap[clientToken] = clientMap
-        self.userTokensMap[userResponseToken] = (u, clientToken)
+        clientName = self.clientsMap[clientToken]
+        assert clientName is not None
+        self.userTokensMap[userResponseToken] = (generatedCode,p,actualTimeout, clientName)
         # Schedule the removal of the token
         deschedule_date = datetime.datetime.now() + datetime.timedelta(seconds=actualTimeout)
-        self.scheduler.add_job(func=self.removeToken,trigger='date',run_date=deschedule_date,args=[self,userResponseToken])
+        try:
+            self.scheduler.add_job(func=self.removeUserTokenFromMap, trigger='date', run_date=deschedule_date, args=[self, userResponseToken])
+        except Exception as e:
+            return
         # Return appropriate json
         return {'code': generatedCode, 'timeout': actualTimeout, 'response_at': "auth/"+userResponseToken}
 
-    def removeToken(self,token):
+    def removeUserTokenFromMap(self, token):
         assert token is not None
-        (user,client) = self.userTokensMap[token]
-        assert user is not None and client is not None
-        del self.userTokensMap[token]
-        clientMap = self.clientsUserMap[client]
-        assert clientMap is not None
-        assert clientMap[user] is not None
-        del clientMap[user]
+        val = self.userTokensMap[token]
+        # Note: race condition possible here, but will assume it doesn't happen
+        if val is not None:
+            del self.userTokensMap[token]
 
     def makeCall(self, userToken):
         assert userToken is not None
-        (user, client) = self.userTokensMap[userToken]
-        assert user is not None and client is not None
-        clientMap = self.clientsUserMap[client]
-        assert clientMap is not None
-        userInfo = clientMap[user]
-        assert userInfo is not None
-        (generatedCode, p,actualTimeout) = userInfo
-        twilioToken = secrets.token_urlsafe(32)
+        val = self.userTokensMap[userToken]
+        assert val is not None
+        (code, phone, timeout, clientName) = val
         evt = threading.Event()
-        self.twilioTokensMap.update({twilioToken:(userToken, False, evt)})
-        generatedTwiml = self.twilio.generateTwiml("",twilioToken,actualTimeout)
-        self.twilio.make_call(generatedTwiml,p)
+        # generate a token == unique url, for twilio to answer
+        twilioToken = secrets.token_urlsafe(32)
+        while twilioToken in self.twilioTokensMap.keys():
+            twilioToken = secrets.token_urlsafe(32)
+        self.twilioTokensMap.update({twilioToken:(code, False, evt)})
+        # get the twiml
+        generatedTwiml = self.twilio.generateTwiml(ngrok_address,twilioToken,timeout,clientName)
+        # Before making the call, we can remove the userToken from the map - this blocks the Client (Bank, or anyone
+        # else randomly trying to guess the URL token to generate a phone call) to make further phone call requests for
+        # that token - they will have to generate a new one (although for the same user) if they want to retry the call
+        self.removeUserTokenFromMap(userToken)
+        # Finally make the call
+        self.twilio.make_call(generatedTwiml,phone)
+        # wait for the call to finish
         evt.wait()
-        # Upon returning, we know the call has been completed
-        # Note that `removeToken` will be called shortly in the future (if Twilio's API isn't too slow) --> we must only
-        # delete the entry in the `twilioToken` map
-        (userToken,result,evt) = self.twilioTokensMap[twilioToken]
-        assert userToken is not None and result is not None and evt is not None
+        # The call has finished, we can proceed by deleting the Twilio token from the Map, and returning the result
+        result = self.twilioTokensMap[twilioToken]
+        assert result is not None
+        (code, authFlag, evt) = result
         del self.twilioTokensMap[twilioToken]
-        return result
+        return authFlag
 
     def registerTwilioAnswer(self,twilioToken,digits):
-        assert twilioToken is not None
-        (userToken, result, evt) = self.twilioTokensMap[twilioToken]
-        assert userToken is not None and result is not None and evt is not None
-        (user, client) = self.userTokensMap[userToken]
-        assert user is not None and client is not None
-        clientMap = self.clientsUserMap[client]
-        assert clientMap is not None
-        userInfo = clientMap[user]
-        assert userInfo is not None
-        (generatedCode, p, actualTimeout) = userInfo
-        auth = int(generatedCode) == int(digits)
-        self.twilioTokensMap[twilioToken] = (userToken,auth,evt)
-        evt.set()
+        assert twilioToken is not None and digits is not None
+        result = self.twilioTokensMap[twilioToken]
+        assert result is not None
+        (code, authFlag, evt) = result
+        auth = (int(code) == int(digits))
+        self.twilioTokensMap[twilioToken] = (code,auth,evt)
+        evt.set() # This wakes up the `make_call` thread that was waiting.
+        # TODO: we might want to pass around the timeout and wake it up as well in case Twilio doesn't respond
 
 
 

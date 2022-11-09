@@ -27,10 +27,10 @@ def getcode():
         abort(403)
     uname = request.args['username']
     phone = request.args['phone']
-    timeout = request.args['timeout']
+    timeout = request.args['to']
     if uname is None or phone is None or timeout is None:
         abort(400)
-    code = pAPI.setCode(client_api_token,uname,phone,timeout)
+    code = pAPI.setCode(client_api_token,uname,phone,int(timeout))
     if code is None:
         abort(400)
     return code
