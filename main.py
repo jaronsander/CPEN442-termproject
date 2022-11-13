@@ -20,6 +20,7 @@ def hello():
 def call():
     resp = VoiceResponse()
     # Start our <Gather> verb
+    # Put hostname in front of gather
     gather = Gather(num_digits=1, action='/gather')
     gather.say('For sales, press 1. For support, press 2.')
     resp.append(gather)
@@ -56,7 +57,7 @@ def gather():
             resp.say("Sorry, I don't understand that choice.")
 
     # If the user didn't choose 1 or 2 (or anything), send them back to /voice
-    resp.redirect('/call')
+    resp.redirect('/gather')
 
     return str(resp)
 
