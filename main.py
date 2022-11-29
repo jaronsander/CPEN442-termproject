@@ -41,7 +41,8 @@ def requestsms():
     phone = request.args['phone']
     if phone is None:
         abort(400)
-    token = pAPI.reqSMS(client_api_token, phone)
+    #token = pAPI.reqSMS(client_api_token, phone)
+    token = pAPI.reqRec(client_api_token, phone)
     if token is None:
         abort(400)
     return token
@@ -72,4 +73,4 @@ def twilio_answer(twiliotoken):
 
 if __name__ == '__main__':
     context = ('ssl_certs/local_api_cert.crt', 'ssl_certs/local_api_key.key')
-    app.run(threaded=True, port=5000, ssl_context=context)
+    app.run(threaded=True, port=5002, ssl_context=context)

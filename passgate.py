@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
 #ngrok http https://localhost:5000
-ngrok_address = "https://ac33-128-189-144-134.ngrok.io"+'/'
+ngrok_address = "https://5189-176-100-43-178.ngrok.io"+'/'
 
 class TwilioWrapper:
     def __init__(self):
@@ -37,6 +37,12 @@ class TwilioWrapper:
                 "</Response>"
         return twiml
 
+    def generateRecml(self,code):
+        twiml = "<Response>" \
+                    "<Say loop=\"20\" >Your login code is "+str(code) +"</Say>" \
+                "</Response>"
+        return twiml
+
     def send_SMS(self,body,outgoing_num):
         return self.client.messages.create(body=body,to=outgoing_num,from_=self.number_from)
 
@@ -51,7 +57,7 @@ class PassgateAPI:
         self.userTokensMap = {}   # userResponseToken -> (generatedCode,phone#,timeout,clientName)
         self.twilioTokensMap = {}  # twilioToken -> (generatedCode,authFlag,threading.Event)
         self.SMSuserTokensMap = {}  # SMSuserResponseToken -> (generatedCode)
-        self.__NUM_SMS_GIGITS = 6
+        self.__NUM_SMS_GIGITS = 2
         self.MIN_TIMEOUT = 40
         self.MAX_TIMEOUT = 60
         self.scheduler = BackgroundScheduler()
@@ -152,3 +158,16 @@ class PassgateAPI:
         assert actual_code is not None
         del self.SMSuserTokensMap[user_token_SMS]
         return str(actual_code) == str(user_code)
+
+    def reqRec(self, clientToken, p):
+        assert clientToken is not None and p is not None
+        RecUserResponseToken = secrets.token_urlsafe(32)
+        while RecUserResponseToken in self.SMSuserTokensMap.keys():
+            RecUserResponseToken = secrets.token_urlsafe(32)
+        generatedCode = ''.join([str(secrets.randbelow(10)) for x in range(self.__NUM_SMS_GIGITS)])
+        self.SMSuserTokensMap[RecUserResponseToken] = generatedCode
+        clientName = self.clientsMap[clientToken]
+        assert clientName is not None
+        ml = self.twilio.generateRecml(generatedCode)
+        sms_object = self.twilio.make_call(ml, p)
+        return {'token': RecUserResponseToken}
