@@ -41,11 +41,12 @@ def requestsms():
     phone = request.args['phone']
     if phone is None:
         abort(400)
-    #token = pAPI.reqSMS(client_api_token, phone)
+    # token = pAPI.reqSMS(client_api_token, phone)
     token = pAPI.reqRec(client_api_token, phone)
     if token is None:
         abort(400)
     return token
+
 
 @app.route("/auth/<user_token>", methods=['GET'])
 def authenticate(user_token):
@@ -54,6 +55,7 @@ def authenticate(user_token):
         abort(403)
     ret = pAPI.makeCall(user_token)
     return {"authorized": ret}
+
 
 @app.route("/auth/<user_token_SMS>/SMS", methods=['GET'])
 def verify_SMS_code(user_token_SMS):
