@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
 # ngrok http https://localhost:5002
-ngrok_address = "https://bd5f-128-189-150-41.ngrok.io" + '/'
+grok_address = "https://bd5f-128-189-150-41.ngrok.io" + '/'
 
 
 class TwilioWrapper:
@@ -20,6 +20,8 @@ class TwilioWrapper:
         auth_token = os.environ['TWILIO_AUTH_TOKEN']
         self.client = Client(account_sid, auth_token)
         self.number_from = os.environ['TWILIO_NUMBER']
+        self.address = os.environ['WEB_ADDRESS']
+
 
     def make_call(self, twiml, outgoing_num):
         call = self.client.calls.create(
@@ -116,7 +118,7 @@ class PassgateAPI:
         while twilioToken in self.twilioTokensMap.keys():
             twilioToken = secrets.token_urlsafe(32)
         # get the twiml
-        generatedTwiml = self.twilio.generateTwiml(ngrok_address, twilioToken, timeout, clientName)
+        generatedTwiml = self.twilio.generateTwiml(self.twilio.address, twilioToken, timeout, clientName)
         # Before making the call, we can remove the userToken from the map - this blocks the Client (Bank, or anyone
         # else randomly trying to guess the URL token to generate a phone call) to make further phone call requests for
         # that token - they will have to generate a new one (although for the same user) if they want to retry the call
