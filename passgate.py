@@ -20,6 +20,7 @@ class TwilioWrapper:
         auth_token = os.environ['TWILIO_AUTH_TOKEN']
         self.client = Client(account_sid, auth_token)
         self.number_from = os.environ['TWILIO_NUMBER']
+        self.address = os.environ['WEB_ADDRESS']
 
     def make_call(self, twiml, outgoing_num):
         call = self.client.calls.create(
@@ -29,10 +30,11 @@ class TwilioWrapper:
         )
         return call
 
-    def generateTwiml(self, ngrokPrefix, twilioToken, requestTimeout, clientName):
+    def generateTwiml(self, address, twilioToken, requestTimeout, clientName):
         resulting_to = requestTimeout - 20
         twiml = "<Response>" \
-                "<Gather action=\"" + ngrokPrefix + "twilio_answer/" + twilioToken + "\" method=\"POST\" input=\"dtmf\" numDigits=\"2\" timeout=\"" + str(
+                "<Gather action=\"" + address + "twilio_answer/" + twilioToken + "\" method=\"POST\" " \
+                                                                           "input=\"dtmf\" numDigits=\"2\" timeout=\"" + str(
             resulting_to) + "\">" \
                             "<Say>Login request for " + clientName + "'s services.\nPlease input the 2 digits that have appeared on your screen in the next " + str(
             resulting_to - 2) + " seconds. </Say>" \
@@ -60,7 +62,7 @@ class PassgateAPI:
         self.userTokensMap = {}  # userResponseToken -> (generatedCode,phone#,timeout,clientName)
         self.twilioTokensMap = {}  # twilioToken -> (generatedCode,authFlag,threading.Event)
         self.SMSuserTokensMap = {}  # SMSuserResponseToken -> (generatedCode)
-        self.__NUM_SMS_GIGITS = 2
+        self.__NUM_SMS_GIGITS = 4
         self.MIN_TIMEOUT = 40
         self.MAX_TIMEOUT = 60
         self.scheduler = BackgroundScheduler()
@@ -116,7 +118,8 @@ class PassgateAPI:
         while twilioToken in self.twilioTokensMap.keys():
             twilioToken = secrets.token_urlsafe(32)
         # get the twiml
-        generatedTwiml = self.twilio.generateTwiml(ngrok_address, twilioToken, timeout, clientName)
+        generatedTwiml = self.twilio.generateTwiml(self.twilio.address, twilioToken, timeout,
+                                                   clientName)
         # Before making the call, we can remove the userToken from the map - this blocks the Client (Bank, or anyone
         # else randomly trying to guess the URL token to generate a phone call) to make further phone call requests for
         # that token - they will have to generate a new one (although for the same user) if they want to retry the call

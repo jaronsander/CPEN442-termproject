@@ -75,4 +75,4 @@ def twilio_answer(twiliotoken):
 
 if __name__ == '__main__':
     #context = ('ssl_certs/local_api_cert.crt', 'ssl_certs/local_api_key.key')
-    app.run(threaded=True, port=5002)
+    app.run(threaded=True)
