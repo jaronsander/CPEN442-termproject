@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
 # ngrok http https://localhost:5002
-ngrok_address = "https://bd5f-128-189-150-41.ngrok.io" + '/'
+grok_address = "https://bd5f-128-189-150-41.ngrok.io" + '/'
 
 
 class TwilioWrapper:
