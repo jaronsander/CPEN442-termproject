@@ -64,7 +64,7 @@ class PassgateAPI:
         self.SMSuserTokensMap = {}  # SMSuserResponseToken -> (generatedCode)
         self.__NUM_SMS_GIGITS = 4
         self.MIN_TIMEOUT = 40
-        self.MAX_TIMEOUT = 60
+        self.MAX_TIMEOUT = 120
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
 
